@@ -7,11 +7,13 @@ pub fn main() !void {
     const module = try parse_file(file, fba.allocator());
     std.debug.print("module = {}\n", .{module});
     std.debug.print("types = {any}\n", .{module.types});
+    std.debug.print("imports = {any}\n", .{module.imports});
 }
 
 const wasm = struct {
     const Module = struct {
         types: []FuncType = undefined,
+        imports: []Import = undefined,
     };
 
     const ValType = enum {
@@ -27,6 +29,16 @@ const wasm = struct {
     const FuncType = struct {
         args: []ValType,
         ret: []ValType,
+    };
+
+    const ImportFunction = struct {
+        func: *const anyopaque,
+        type_idx: u32,
+    };
+
+    const Import = union {
+        func: ImportFunction,
+        // table, memory, and global ommited until used.
     };
 };
 
@@ -60,6 +72,9 @@ fn parse_file(comptime slice: []const u8, allocator: std.mem.Allocator) !*wasm.M
         switch (id) {
             1 => {
                 module.types = try parse_vec(&section_r, allocator, parse_function_type);
+            },
+            2 => {
+                module.imports = try parse_vec(&section_r, allocator, parse_import);
             },
             else => {},
         }
@@ -122,6 +137,63 @@ fn parse_value_type(r: *Reader, allocator: std.mem.Allocator) !wasm.ValType {
     };
 }
 
+const ImportDefinition = struct {
+    module: []const u8,
+    name: []const u8,
+    func: *const anyopaque,
+};
+
+const import_functions = struct {
+    fn proc_exit(a: u32) void {
+        _ = a;
+    }
+
+    fn fd_write(a: u32, b: u32, c: u32, d: u32) u32 {
+        _ = a;
+        _ = b;
+        _ = c;
+        _ = d;
+        return 0;
+    }
+};
+
+const import_definitions = [_]ImportDefinition{
+    .{
+        .module = "wasi_snapshot_preview1",
+        .name = "proc_exit",
+        .func = import_functions.proc_exit,
+    },
+    .{
+        .module = "wasi_snapshot_preview1",
+        .name = "fd_write",
+        .func = import_functions.fd_write,
+    },
+};
+
+fn parse_import(r: *Reader, allocator: std.mem.Allocator) !wasm.Import {
+    _ = allocator;
+    const module = try r.bytes_n();
+    const name = try r.bytes_n();
+    const import_type = try r.byte();
+    const import_index = try r.u(32);
+
+    if (import_type != 0x00) {
+        return WasmParseError.ImportTypeNotSupported;
+    }
+    for (&import_definitions) |*dfn| {
+        if (std.mem.eql(u8, module, dfn.module) and std.mem.eql(u8, name, dfn.name)) {
+            return wasm.Import{
+                .func = .{
+                    .type_idx = import_index,
+                    .func = dfn.func,
+                },
+            };
+        }
+    }
+    return WasmParseError.ImportNotFound;
+}
+
+
 const Reader = struct {
     slice: []const u8,
 
@@ -141,6 +213,11 @@ const Reader = struct {
         const r = self.slice[0..length];
         self.slice = self.slice[length..];
         return r;
+    }
+
+    fn bytes_n(self: *Reader)  WasmParseError![]const u8 {
+        const length = try self.u(32);
+        return self.bytes(length);
     }
 
     fn byte(self: *Reader) !u8 {
@@ -172,4 +249,6 @@ const WasmParseError = error {
     WrongMagic,
     WrongVersion,
     InvalidFormat,
+    ImportTypeNotSupported,
+    ImportNotFound,
 };
