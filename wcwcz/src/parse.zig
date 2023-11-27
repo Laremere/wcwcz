@@ -2,13 +2,14 @@
 
 const std = @import("std");
 
-const wasm = struct {
-    const Module = struct {
+pub const wasm = struct {
+    pub const Module = struct {
         types: []FuncType = undefined,
         imports: []Import = undefined,
+        functions: []u32 = undefined,
     };
 
-    const ValType = enum {
+    pub const ValType = enum {
         i32,
         i64,
         f32,
@@ -18,18 +19,18 @@ const wasm = struct {
         extern_ref,
     };
 
-    const FuncType = struct {
+    pub const FuncType = struct {
         args: []ValType,
         ret: []ValType,
     };
 
-    const ImportFunction = struct {
+    pub const ImportFunction = struct {
     	module: []const u8,
     	name: []const u8,
         type_idx: u32,
     };
 
-    const Import = union {
+    pub const Import = union(enum) {
         func: ImportFunction,
         // table, memory, and global ommited until used.
     };
@@ -56,11 +57,8 @@ pub fn file(comptime slice: []const u8, allocator: std.mem.Allocator) !*wasm.Mod
 
     while (r.slice.len > 0) {
         const id = try r.byte();
-        std.debug.print("section id = {d}\n", .{id});    
         const length = try r.u(32);
-        std.debug.print("section length = {d}\n", .{length});
         const section_slice = try r.bytes(length);
-        std.debug.print("section id = {}\n", .{std.fmt.fmtSliceHexUpper(section_slice)});
 
         var section_r = Reader{.slice = section_slice};
         switch (id) {
@@ -70,7 +68,15 @@ pub fn file(comptime slice: []const u8, allocator: std.mem.Allocator) !*wasm.Mod
             2 => {
                 module.imports = try parse_vec(&section_r, allocator, parse_import);
             },
-            else => {},
+            3 => {
+            	module.functions = try parse_vec(&section_r, allocator, parse_function_index);
+        	},
+            else => {
+		        std.debug.print("unparsed section:\n", .{});    
+		        std.debug.print("section id = {d}\n", .{id});    
+		        std.debug.print("section length = {d}\n", .{length});
+		        std.debug.print("section contents = {}\n\n", .{std.fmt.fmtSliceHexUpper(section_slice)});
+           	},
         }
     }
 
@@ -148,6 +154,11 @@ fn parse_import(r: *Reader, allocator: std.mem.Allocator) !wasm.Import {
 	    };
     }
     return WasmParseError.ImportTypeNotSupported;
+}
+
+fn parse_function_index(r: *Reader, allocator: std.mem.Allocator) !u32 {
+	_ = allocator;
+	return r.u(32);
 }
 
 const Reader = struct {

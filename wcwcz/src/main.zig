@@ -6,9 +6,53 @@ pub fn main() !void {
     var buffer: [1024]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buffer);
     const module = try parse.file(file, fba.allocator());
-    std.debug.print("module = {}\n", .{module});
-    std.debug.print("types = {any}\n", .{module.types});
-    std.debug.print("imports = {any}\n", .{module.imports});
+    debug_print(module);
+}
+
+fn debug_print_func_type(fn_type: parse.wasm.FuncType) void {
+    std.debug.print("fn(", .{});
+    for (fn_type.args, 0..) |arg, i| {
+        if (i > 0) {
+            std.debug.print(", ", .{});
+        }
+        std.debug.print("{s}", .{@tagName(arg)});
+    }
+    std.debug.print(") -> (", .{});
+    for (fn_type.ret, 0..) |arg, i| {
+        if (i > 0) {
+            std.debug.print(", ", .{});
+        }
+        std.debug.print("{s}", .{@tagName(arg)});
+    }
+    std.debug.print(")", .{});
+}
+
+fn debug_print(module: *parse.wasm.Module) void {
+    std.debug.print("Wasm Module\n", .{});
+    std.debug.print("\nSection 1: Types\n", .{});
+    for (module.types, 0..) |t, i| {
+        std.debug.print(" {d: >3}: ", .{i});
+        debug_print_func_type(t);
+        std.debug.print("\n", .{});
+    }
+
+    std.debug.print("\nSection 2: Imports\n", .{});
+    for (module.imports, 0..) |any_import, i| {
+        switch (any_import) {
+            .func => |f| {
+                std.debug.print(" {d: >3}: {s}.{s} = ", .{i, f.module, f.name});
+                debug_print_func_type(module.types[f.type_idx]);
+                std.debug.print("\n", .{});
+            }
+        }
+    }
+
+    std.debug.print("\nSection 3: Functions\n", .{});
+    for (module.functions, 0..) |f, i| {
+        std.debug.print(" {d: >3}: ", .{i});
+        debug_print_func_type(module.types[f]);
+        std.debug.print("\n", .{});
+    }
 }
 
 // const import_functions = struct {
