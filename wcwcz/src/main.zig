@@ -27,6 +27,14 @@ fn debug_print_func_type(fn_type: parse.wasm.FuncType) void {
     std.debug.print(")", .{});
 }
 
+fn debug_print_limit(limit: parse.wasm.Limit) void {
+    if (limit.max) |max| {
+        std.debug.print("({d},{d})", .{limit.min, max});
+    } else {
+        std.debug.print("({d},inf)", .{limit.min});
+    }
+}
+
 fn debug_print(module: *parse.wasm.Module) void {
     std.debug.print("Wasm Module\n", .{});
     std.debug.print("\nSection 1: Types\n", .{});
@@ -51,6 +59,13 @@ fn debug_print(module: *parse.wasm.Module) void {
     for (module.functions, 0..) |f, i| {
         std.debug.print(" {d: >3}: ", .{i});
         debug_print_func_type(module.types[f]);
+        std.debug.print("\n", .{});
+    }
+
+    std.debug.print("\nSection 5: Memory\n", .{});
+    for (module.memory, 0..) |mem, i| {
+        std.debug.print(" {d: >3}: ", .{i});
+        debug_print_limit(mem);
         std.debug.print("\n", .{});
     }
 }

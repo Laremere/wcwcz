@@ -7,6 +7,7 @@ pub const wasm = struct {
         types: []FuncType = undefined,
         imports: []Import = undefined,
         functions: []u32 = undefined,
+        memory: []Limit = undefined,
     };
 
     pub const ValType = enum {
@@ -33,6 +34,11 @@ pub const wasm = struct {
     pub const Import = union(enum) {
         func: ImportFunction,
         // table, memory, and global ommited until used.
+    };
+
+    pub const Limit = struct {
+    	min: u32,
+    	max: ?u32,
     };
 };
 
@@ -71,6 +77,9 @@ pub fn file(comptime slice: []const u8, allocator: std.mem.Allocator) !*wasm.Mod
             3 => {
             	module.functions = try parse_vec(&section_r, allocator, parse_function_index);
         	},
+        	5 => {
+        		module.memory = try parse_vec(&section_r, allocator, parse_limit);
+    		},
             else => {
 		        std.debug.print("unparsed section:\n", .{});    
 		        std.debug.print("section id = {d}\n", .{id});    
@@ -159,6 +168,30 @@ fn parse_import(r: *Reader, allocator: std.mem.Allocator) !wasm.Import {
 fn parse_function_index(r: *Reader, allocator: std.mem.Allocator) !u32 {
 	_ = allocator;
 	return r.u(32);
+}
+
+fn parse_limit(r: *Reader, allocator: std.mem.Allocator) !wasm.Limit {
+	_ = allocator;
+	switch (try r.byte()) {
+		0x00 => {
+			const min = try r.u(32);
+			return wasm.Limit {
+				.min = min,
+				.max = null,
+			};
+		},
+		0x01 => {
+			const min = try r.u(32);
+			const max = try r.u(32);
+			return wasm.Limit {
+				.min = min,
+				.max = max,
+			};
+		},
+		else => {
+			return WasmParseError.InvalidFormat;
+		}
+	}
 }
 
 const Reader = struct {
