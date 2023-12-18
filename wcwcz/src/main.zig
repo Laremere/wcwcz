@@ -68,6 +68,12 @@ fn debug_print(module: *parse.wasm.Module) void {
         debug_print_limit(mem);
         std.debug.print("\n", .{});
     }
+
+    std.debug.print("\nSection 6: Global\n", .{});
+    for (module.global, 0..) |g, i| {
+        const mutability = if(g.mutable) "var" else "const";
+        std.debug.print(" {d: >3}: {s} {s}", .{i, mutability, @tagName(g.value_type)});
+    }
 }
 
 // const import_functions = struct {

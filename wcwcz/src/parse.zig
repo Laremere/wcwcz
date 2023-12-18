@@ -8,6 +8,7 @@ pub const wasm = struct {
         imports: []Import = undefined,
         functions: []u32 = undefined,
         memory: []Limit = undefined,
+        global: []Global = undefined,
     };
 
     pub const ValType = enum {
@@ -39,6 +40,20 @@ pub const wasm = struct {
     pub const Limit = struct {
     	min: u32,
     	max: ?u32,
+    };
+
+    pub const Global = struct {
+    	value_type: ValType,
+    	mutable: bool,
+    	expr: Expression,
+    };
+
+    pub const Expression = struct {
+    	insts: []Instruction,
+    };
+
+    pub const Instruction = union(enum) {
+    	i32_const: i32,
     };
 };
 
@@ -79,6 +94,9 @@ pub fn file(comptime slice: []const u8, allocator: std.mem.Allocator) !*wasm.Mod
         	},
         	5 => {
         		module.memory = try parse_vec(&section_r, allocator, parse_limit);
+    		},
+    		6 => {
+    			module.global = try parse_vec(&section_r, allocator, parse_global);
     		},
             else => {
 		        std.debug.print("unparsed section:\n", .{});    
@@ -194,6 +212,50 @@ fn parse_limit(r: *Reader, allocator: std.mem.Allocator) !wasm.Limit {
 	}
 }
 
+fn parse_global(r: *Reader, allocator: std.mem.Allocator) !wasm.Global {
+	const value_type = try parse_value_type(r, allocator);
+	const mutable = switch(try r.byte()) {
+		0x00 => false,
+		0x01 => true,
+		else => return WasmParseError.InvalidFormat,
+	};
+
+	const expr = try parse_expression(r, allocator);
+
+	return wasm.Global{
+		.value_type = value_type,
+		.mutable = mutable,
+		.expr = expr,
+	};
+}
+
+fn parse_expression(r: *Reader, allocator: std.mem.Allocator) !wasm.Expression {
+	var instructions: [500]wasm.Instruction = undefined;
+
+	// keep a stack of slices into instructions?  New expressions push a new slice, ending expression block pops slice and copies into allocator,
+	// other instructions append to current top slice.
+_ = allocator;
+_ = instructions;
+	while (true) {
+		const b = try r.byte();
+		switch (b) {
+			0x01 => {},
+			0x41 => {
+				_ = try r.u(32); // should actually be r.i(32)
+			},
+			0x0B => {
+				return wasm.Expression{
+					.insts = &.{},
+				};
+			},
+			else => {
+				std.debug.print("unknown instruction = {}\n\n", .{std.fmt.fmtSliceHexUpper(&.{b})});
+				return WasmParseError.UnknownInstruction;
+			},
+		}
+	}
+}
+
 const Reader = struct {
     slice: []const u8,
 
@@ -249,5 +311,6 @@ const WasmParseError = error {
     WrongMagic,
     WrongVersion,
     InvalidFormat,
-    ImportTypeNotSupported,
+    ImportTypeNotSupported, // Full impl of spec will not return, would just be an invalid format.
+    UnknownInstruction, // Full impl of spec will not return, would just be an invalid format.
 };
